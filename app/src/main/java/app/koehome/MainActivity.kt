@@ -23,6 +23,8 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebResourceRequest
@@ -115,6 +117,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         clockArea = findViewById(R.id.clockArea)
         exitButton = findViewById(R.id.exit)
         setUpWebView()
+
+        // 写真は指で横になぞっても送れる (左へ = 次、右へ = 前)
+        val swipe = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (kotlin.math.abs(velocityX) < kotlin.math.abs(velocityY)) return false
+                run(if (velocityX < 0) Command.Next else Command.Prev)
+                return true
+            }
+        })
+        photoView.setOnTouchListener { _, e -> swipe.onTouchEvent(e) }
 
         talk.setOnClickListener { onTalkPressed() }
         findViewById<Button>(R.id.webDown).setOnClickListener { run(Command.ScrollDown) }
@@ -399,10 +412,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         if (cmd != Command.Unknown && cmd != Command.CallUnknown) misses = 0
         when (cmd) {
             is Command.Call -> {
-                if (cmd.candidates.size == 1) askConfirm(cmd.candidates[0]) else askChoose(cmd.candidates)
+                if (cmd.candidates.size == 1) askConfirm(cmd.candidates[0]) else askChoose(cmd.candidates, cmd.spoken)
             }
-            Command.CallUnknown ->
+            Command.CallUnknown -> {
+                // 次のひとことは「名前だけ」でも電話の相手として受け取る
+                goHome()
+                stage = Stage.ASK_NAME
                 onMiss("どなたにかけるか、わかりませんでした。お名前を、もう一度お願いします。")
+            }
             Command.Yes -> {
                 val c = pendingContact
                 if (stage == Stage.CONFIRM && c != null) placeCall(c)
@@ -420,6 +437,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                 say("いつもの画面に、もどります。") { exitToUsualHome() }
             }
             Command.Photos -> openPhotos()
+            is Command.Assistant -> handOffToAssistant(cmd.heard)
             is Command.Search -> if (cmd.query.isBlank()) askQuery() else openWeb(cmd.query)
             Command.ScrollDown -> if (webOpen) webView.pageDown(false) else run(Command.Unknown)
             Command.ScrollUp -> if (webOpen) webView.pageUp(false) else run(Command.Unknown)
@@ -443,6 +461,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                 Stage.CONFIRM -> onMiss("「はい」か「いいえ」で、お答えください。")
                 Stage.CHOOSE -> onMiss("どなたにかけますか。お名前を、もう一度お願いします。")
                 Stage.ASK_QUERY -> onMiss("何を調べるか、もう一度お願いします。")
+                Stage.ASK_NAME -> onMiss("どなたにかけますか。お名前を、もう一度お願いします。")
                 Stage.IDLE -> {
                     misses = 0
                     say("すみません、わかりませんでした。「だれだれさんに電話」や、「写真を見せて」と言ってみてください。")
@@ -533,12 +552,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         )
     }
 
-    private fun showContactButtons(header: String, list: List<Contact>) {
+    private fun showContactButtons(header: String, list: List<Contact>, numbered: Boolean = false) {
         listHeader.text = header
         contactList.removeAllViews()
-        for (c in list) {
+        for ((i, c) in list.withIndex()) {
             val b = Button(this).apply {
-                text = "☎ ${c.name}"
+                text = if (numbered) "${i + 1}番　${c.name}" else "☎ ${c.name}"
                 textSize = 28f
                 isAllCaps = false
                 minimumHeight = dp(88)
@@ -562,15 +581,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         say("${c.spoken}に、電話をかけます。よろしいですか？") { startListening() }
     }
 
-    private fun askChoose(candidates: List<Contact>) {
+    /** 候補が複数いるとき:「山田さんは3人見つかりました。…どなたに電話しますか？」 */
+    private fun askChoose(candidates: List<Contact>, spoken: String) {
         closePhotoPanel()
+        closeWebPanel()
         val list = candidates.take(MAX_CHOICES)
         stage = Stage.CHOOSE
         choices = list
         pendingContact = null
         confirmRow.visibility = View.GONE
-        showContactButtons("かけたい人のボタンを押すか、お名前を言ってください", list)
-        say("${list.joinToString("、") { it.spoken }}が見つかりました。どなたにかけますか？") { startListening() }
+        showContactButtons("かけたい人のボタンを押すか、お名前か番号を言ってください", list, numbered = true)
+        val who = if (spoken.isBlank()) "お名前の近い方が、" else "${spoken}は、"
+        val names = list.mapIndexed { i, c -> "${i + 1}番、${c.spoken}" }.joinToString("。")
+        val more = if (candidates.size > list.size) "画面には、最初の${list.size}人を出しています。" else ""
+        say("$who${candidates.size}人見つかりました。$names。${more}どなたに電話しますか？") { startListening() }
     }
 
     private fun placeCall(c: Contact) {
@@ -625,7 +649,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                     homePanel.visibility = View.GONE
                     photoPanel.visibility = View.VISIBLE
                     showPhoto()
-                    say("いちばん新しい写真です。次の写真を見るときは、「次」と言うか、右下のボタンを押してください。")
+                    // Android 14 以降で「選択した写真のみ許可」にすると、選んだ数枚しか見えない
+                    if (Build.VERSION.SDK_INT >= 34 && list.size <= FEW_PHOTOS) {
+                        heard.text = "※ 写真が少ないときは：設定 → アプリ → こえホーム → 権限 → 写真と動画 →「常にすべて許可」"
+                    }
+                    val count = if (list.size >= MAX_PHOTOS) "" else "写真が${list.size}枚あります。"
+                    say(
+                        if (list.size == 1) "写真が1枚だけ見つかりました。"
+                        else "${count}いちばん新しい写真です。次の写真を見るときは、「次」と言うか、右下のボタンを押してください。"
+                    )
                 }
             }
         }
@@ -674,6 +706,29 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         photoPanel.visibility = View.GONE
         homePanel.visibility = View.VISIBLE
         photoView.setImageDrawable(null)
+    }
+
+    // ---------------------------------------------------------------- Google アシスタントへの引き継ぎ
+
+    /**
+     * Google アシスタント (端末の既定のアシスタント) を呼び出す。
+     * 聞いた言葉をアシスタントに渡す公式の方法は無いため、もう一度話してもらう。
+     */
+    private fun handOffToAssistant(heardText: String) {
+        goHome()
+        val again = if (heardText.isBlank()) "もう一度、お話しください。" else "もう一度、「$heardText」と、お話しください。"
+        say("グーグルアシスタントに代わります。音が鳴ったら、$again") {
+            message.text = MSG_IDLE
+            try {
+                startActivity(Intent(Intent.ACTION_VOICE_COMMAND).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (e: Exception) {
+                try {
+                    startActivity(Intent(Intent.ACTION_ASSIST).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (e2: Exception) {
+                    say("アシスタントを、呼び出せませんでした。")
+                }
+            }
+        }
     }
 
     // ---------------------------------------------------------------- Web検索
@@ -783,8 +838,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         const val SPEECH_RATE = 0.9f              // 読み上げ速度 (1.0 が標準。小さいほどゆっくり)
         const val MAX_AUTO_RETRY = 2              // 自動で聞き直す回数
         const val MAX_FAVORITES = 5               // ホームに並べる連絡先ボタンの数
-        const val MAX_CHOICES = 4                 // 同名候補を出す上限
+        const val MAX_CHOICES = 6                 // 同名候補を出す上限
         const val MAX_PHOTOS = 300                // さかのぼって見られる写真の枚数
+        const val FEW_PHOTOS = 5                  // これ以下なら「許可が一部だけ」の疑いを案内する
         const val WEB_TEXT_ZOOM = 130             // 検索結果の文字の大きさ (%)
         const val LISTEN_WATCHDOG_MS = 20_000L
         const val GREETING_INTERVAL_MS = 10 * 60 * 1000L
