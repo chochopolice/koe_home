@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#FFFDF7</color>
+    <color name="ink">#1B1B1B</color>
+    <color name="sub">#555555</color>
+    <color name="talk">#0B6E4F</color>
+    <color name="talk_active">#C62828</color>
+    <color name="yes">#0B6E4F</color>
+    <color name="no">#6B6B6B</color>
+    <color name="contact">#1D4E89</color>
+    <color name="white">#FFFFFF</color>
+</resources>

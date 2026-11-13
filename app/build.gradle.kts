@@ -1,0 +1,36 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "app.koehome"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "app.koehome"
+        minSdk = 28          // Android 9 以上
+        targetSdk = 34
+        versionCode = 1
+        versionName = "0.1"
+    }
+
+    // どこでビルドしても同じ署名になるよう、同梱のデバッグ用キーを使う。
+    // (署名が変わると上書きインストールできず、入れ直しになるため)
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
