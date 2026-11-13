@@ -50,12 +50,13 @@ object Text {
 }
 
 /** いま何を待っているか。 */
-enum class Stage { IDLE, CONFIRM, CHOOSE }
+enum class Stage { IDLE, CONFIRM, CHOOSE, ASK_QUERY }
 
 sealed class Command {
     object Yes : Command()
     object No : Command()
     object Stop : Command()
+    object Exit : Command()
     object Next : Command()
     object Prev : Command()
     object Photos : Command()
@@ -64,7 +65,11 @@ sealed class Command {
     object Help : Command()
     object CallUnknown : Command()
     object Unknown : Command()
+    object ScrollDown : Command()
+    object ScrollUp : Command()
+    object Back : Command()
     data class Call(val candidates: List<Contact>) : Command()
+    data class Search(val query: String) : Command()
 }
 
 /**
@@ -76,6 +81,13 @@ object CommandParser {
     private val NO = listOf("いいえ", "いや", "ううん", "ちがう", "違う", "じゃない", "ではない", "やめ", "だめ", "駄目", "きゃんせる", "かけない", "まちがい", "間違")
     private val YES = listOf("はい", "うん", "ええ", "そう", "おねがい", "お願い", "かけて", "おけ", "ok", "いいよ", "いいです", "よろしい", "だいじょうぶ", "大丈夫")
     private val STOP = listOf("やめ", "もどる", "戻る", "もどって", "戻って", "とじ", "閉じ", "おわり", "終わり", "おしまい", "ほむ", "きゃんせる", "最初")
+    private val EXIT = listOf("終了", "しゅうりょう", "いつもの", "あぷりをとじ", "あぷりを閉じ")
+    private val SEARCH = listOf("しらべ", "調べ", "けんさく", "検索", "ぐぐ")
+    private val SEARCH_RAW = listOf("調べ", "しらべ", "検索", "けんさく", "ググ", "ぐぐ")
+    private val CLOSE = listOf("やめ", "とじ", "閉じ")
+    private val DOWN = listOf("した", "下", "つづき", "続き")
+    private val UP = listOf("うえ", "上")
+    private val BACK = listOf("まえ", "前", "もどる", "戻る", "もどって", "戻って")
     private val NEXT = listOf("つぎ", "次", "すすむ", "すすんで", "進")
     private val PREV = listOf("まえ", "前")
     private val PHOTOS = listOf("しゃしん", "写真", "ふぉと", "あるばむ", "画像")
@@ -104,12 +116,32 @@ object CommandParser {
         return emptyList()
     }
 
+    /** 「東京の天気を調べて」→「東京の天気」。調べる言葉が無ければ空文字。 */
+    fun extractQuery(raw: String): String {
+        val s = raw.trim()
+        val hit = SEARCH_RAW.map { it to s.lastIndexOf(it) }.filter { it.second >= 0 }.maxByOrNull { it.second }
+            ?: return clean(s)
+        val before = clean(s.substring(0, hit.second))
+        if (before.isNotEmpty()) return before
+        // 「検索 天気予報」のように後ろに言葉が来る形
+        val after = s.substring(hit.second + hit.first.length)
+            .replace(Regex("^(して|て|る|たい)?(ください|下さい|ほしい|欲しい)?"), "")
+        return clean(after)
+    }
+
+    private fun clean(s: String): String = s
+        .replace(Regex("(インターネット|ネット|ウェブ|グーグル|Google|google)で"), "")
+        .trim().trim('、', '。', '？', '?', '！', '!', ' ', '　')
+        .replace(Regex("(について|に関して|のこと)?(を|って|は)?$"), "")
+        .trim()
+
     fun parse(
         texts: List<String>,
         contacts: List<Contact>,
         stage: Stage,
         choices: List<Contact>,
         photoOpen: Boolean,
+        webOpen: Boolean = false,
     ): Command {
         if (texts.isEmpty()) return Command.Unknown
         val t = Text.norm(texts[0])
@@ -126,10 +158,22 @@ object CommandParser {
             return Command.Unknown
         }
 
+        if (stage == Stage.ASK_QUERY) {
+            if (t.hasAny(NO) || t.hasAny(STOP)) return Command.Stop
+            return Command.Search(extractQuery(texts[0]))
+        }
+
+        if (t.hasAny(SEARCH) && !t.hasAny(CLOSE)) return Command.Search(extractQuery(texts[0]))
+        if (webOpen) {
+            if (t.hasAny(DOWN)) return Command.ScrollDown
+            if (t.hasAny(UP)) return Command.ScrollUp
+            if (t.hasAny(BACK)) return Command.Back
+        }
         if (photoOpen) {
             if (t.hasAny(NEXT)) return Command.Next
             if (t.hasAny(PREV)) return Command.Prev
         }
+        if (t.hasAny(EXIT)) return Command.Exit
         if (t.hasAny(STOP)) return Command.Stop
         if (t.hasAny(PHOTOS)) return Command.Photos
 

@@ -32,6 +32,16 @@
             android:textStyle="bold" />
     </LinearLayout>
 
+    <Button
+        android:id="@+id/exit"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_marginTop="4dp"
+        android:backgroundTint="@color/no"
+        android:text="✕ とじて、いつもの画面へ"
+        android:textColor="@color/white"
+        android:textSize="22sp" />
+
     <!-- 中央: ホーム(連絡先ボタン) と 写真 を切り替える -->
     <FrameLayout
         android:layout_width="match_parent"
@@ -119,6 +129,59 @@
                     android:layout_weight="1"
                     android:text="次 ▶"
                     android:textSize="24sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Web検索の結果 -->
+        <LinearLayout
+            android:id="@+id/webPanel"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <WebView
+                android:id="@+id/web"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/webUp"
+                    android:layout_width="0dp"
+                    android:layout_height="72dp"
+                    android:layout_weight="1"
+                    android:text="▲ 上"
+                    android:textSize="22sp" />
+
+                <Button
+                    android:id="@+id/webDown"
+                    android:layout_width="0dp"
+                    android:layout_height="72dp"
+                    android:layout_weight="1"
+                    android:text="▼ 下"
+                    android:textSize="22sp" />
+
+                <Button
+                    android:id="@+id/webBack"
+                    android:layout_width="0dp"
+                    android:layout_height="72dp"
+                    android:layout_weight="1"
+                    android:text="◀ 前"
+                    android:textSize="22sp" />
+
+                <Button
+                    android:id="@+id/webClose"
+                    android:layout_width="0dp"
+                    android:layout_height="72dp"
+                    android:layout_weight="1"
+                    android:text="とじる"
+                    android:textSize="22sp" />
             </LinearLayout>
         </LinearLayout>
     </FrameLayout>

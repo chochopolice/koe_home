@@ -25,10 +25,14 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -53,6 +57,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     private lateinit var photoInfo: TextView
     private lateinit var listHeader: TextView
     private lateinit var contactList: LinearLayout
+    private lateinit var webPanel: View
+    private lateinit var webView: WebView
+    private lateinit var clockArea: View
+    private lateinit var exitButton: View
 
     private val ui = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
@@ -81,6 +89,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     private var photos: List<Photo> = emptyList()
     private var photoIndex = 0
     private var photoOpen = false
+    private var webOpen = false
     private var lastGreeting = 0L
 
     // ---------------------------------------------------------------- ライフサイクル
@@ -101,26 +110,40 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         listHeader = findViewById(R.id.listHeader)
         contactList = findViewById(R.id.contactList)
 
+        webPanel = findViewById(R.id.webPanel)
+        webView = findViewById(R.id.web)
+        clockArea = findViewById(R.id.clockArea)
+        exitButton = findViewById(R.id.exit)
+        setUpWebView()
+
         talk.setOnClickListener { onTalkPressed() }
+        findViewById<Button>(R.id.webDown).setOnClickListener { run(Command.ScrollDown) }
+        findViewById<Button>(R.id.webUp).setOnClickListener { run(Command.ScrollUp) }
+        findViewById<Button>(R.id.webBack).setOnClickListener { run(Command.Back) }
+        findViewById<Button>(R.id.webClose).setOnClickListener { run(Command.Stop) }
         findViewById<Button>(R.id.yes).setOnClickListener { run(Command.Yes) }
         findViewById<Button>(R.id.no).setOnClickListener { run(Command.No) }
         findViewById<Button>(R.id.photoNext).setOnClickListener { run(Command.Next) }
         findViewById<Button>(R.id.photoPrev).setOnClickListener { run(Command.Prev) }
         findViewById<Button>(R.id.photoClose).setOnClickListener { run(Command.Stop) }
+        findViewById<Button>(R.id.exit).setOnClickListener { exitToUsualHome() }
         findViewById<View>(R.id.clockArea).setOnLongClickListener { showFamilyMenu(); true }
 
         tts = TextToSpeech(this, this)
         message.text = MSG_IDLE
         showFavorites()
         requestMissingPermissions()
+        offerAutoStartSetup()
     }
 
     override fun onResume() {
         super.onResume()
         reloadContacts()
+        WatchService.sync(this)   // 許可の画面から戻ってきたときにも反映する
+        webView.onResume()
         // しばらくぶりに画面を見たときだけ、使い方をひとこと案内する
         val now = SystemClock.elapsedRealtime()
-        if (stage == Stage.IDLE && !photoOpen && (lastGreeting == 0L || now - lastGreeting > GREETING_INTERVAL_MS)) {
+        if (stage == Stage.IDLE && !photoOpen && !webOpen && (lastGreeting == 0L || now - lastGreeting > GREETING_INTERVAL_MS)) {
             lastGreeting = now
             say("ご用のときは、下の大きなボタンを押して、お話しください。")
         }
@@ -128,6 +151,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
 
     override fun onPause() {
         super.onPause()
+        webView.onPause()
         cancelListening()
         afterSpeech = null
         pendingSay = null
@@ -139,6 +163,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         recognizer = null
         tts.shutdown()
         io.shutdown()
+        webView.destroy()
         super.onDestroy()
     }
 
@@ -151,6 +176,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (webOpen && webView.canGoBack()) {
+            webView.goBack()
+            return
+        }
         // ホーム画面なので閉じない。最初の状態に戻すだけ。
         goHome()
         message.text = MSG_IDLE
@@ -310,7 +339,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             return
         }
         heard.text = "聞こえた言葉：「${texts[0]}」"
-        run(CommandParser.parse(texts, contacts, stage, choices, photoOpen))
+        run(CommandParser.parse(texts, contacts, stage, choices, photoOpen, webOpen))
     }
 
     override fun onPartialResults(partialResults: Bundle?) {
@@ -386,7 +415,22 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                 goHome()
                 say("最初の画面に、もどりました。")
             }
+            Command.Exit -> {
+                goHome()
+                say("いつもの画面に、もどります。") { exitToUsualHome() }
+            }
             Command.Photos -> openPhotos()
+            is Command.Search -> if (cmd.query.isBlank()) askQuery() else openWeb(cmd.query)
+            Command.ScrollDown -> if (webOpen) webView.pageDown(false) else run(Command.Unknown)
+            Command.ScrollUp -> if (webOpen) webView.pageUp(false) else run(Command.Unknown)
+            Command.Back -> {
+                if (webOpen && webView.canGoBack()) {
+                    webView.goBack()
+                } else {
+                    goHome()
+                    say("最初の画面に、もどりました。")
+                }
+            }
             Command.Next -> movePhoto(+1)
             Command.Prev -> movePhoto(-1)
             Command.Time ->
@@ -394,10 +438,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             Command.Date ->
                 say("今日は、${SimpleDateFormat("M月d日 EEEE", Locale.JAPAN).format(Date())}です。")
             Command.Help ->
-                say("「だれだれさんに電話」、「写真を見せて」、「いま何時」と、話しかけてください。やめたいときは、「やめる」と言ってください。")
+                say("「だれだれさんに電話」、「写真を見せて」、「なになにを調べて」、「いま何時」と、話しかけてください。やめたいときは、「やめる」と言ってください。")
             Command.Unknown -> when (stage) {
                 Stage.CONFIRM -> onMiss("「はい」か「いいえ」で、お答えください。")
                 Stage.CHOOSE -> onMiss("どなたにかけますか。お名前を、もう一度お願いします。")
+                Stage.ASK_QUERY -> onMiss("何を調べるか、もう一度お願いします。")
                 Stage.IDLE -> {
                     misses = 0
                     say("すみません、わかりませんでした。「だれだれさんに電話」や、「写真を見せて」と言ってみてください。")
@@ -415,7 +460,51 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         choices = emptyList()
         confirmRow.visibility = View.GONE
         closePhotoPanel()
+        closeWebPanel()
         showFavorites()
+    }
+
+    // ---------------------------------------------------------------- とじる・自動起動
+
+    /** こえホームをとじて、いつものホーム画面を出す。 */
+    private fun exitToUsualHome() {
+        goHome()
+        message.text = MSG_IDLE
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val current = packageManager.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)
+        if (current?.activityInfo?.packageName == packageName) {
+            // こえホーム自身が既定のホームになっている場合は、もう一方のホームアプリを直接開く
+            val other = packageManager.queryIntentActivities(home, 0).map { it.activityInfo }
+                .firstOrNull { it.packageName != packageName && it.packageName != "com.android.settings" }
+            if (other == null) {
+                message.text = "ほかのホーム画面が見つかりませんでした。"
+                return
+            }
+            home.setClassName(other.packageName, other.name)
+            open(home)
+            return
+        }
+        // ふつうのアプリとして動いているとき: 自分を後ろに下げる。
+        // 直前に使っていたアプリがあればそこへ、なければいつものホームに戻る。
+        if (!moveTaskToBack(true)) open(home)
+    }
+
+    /** 初回だけ、電源投入時の自動起動に必要な許可を案内する。 */
+    private fun offerAutoStartSetup() {
+        val prefs = getSharedPreferences("koehome", MODE_PRIVATE)
+        if (Settings.canDrawOverlays(this) || prefs.getBoolean("askedAutoStart", false)) return
+        prefs.edit().putBoolean("askedAutoStart", true).apply()
+        AlertDialog.Builder(this)
+            .setTitle("画面を点けたとき自動で開く")
+            .setMessage("画面を点けたとき自動で開くには「他のアプリの上に重ねて表示」の許可が必要です。次の画面で こえホーム をオンにしてください。\n（あとから設定する場合は、時計を長押し）")
+            .setPositiveButton("設定を開く") { _, _ -> openAutoStartSetting() }
+            .setNegativeButton("あとで", null)
+            .show()
+    }
+
+    private fun openAutoStartSetting() {
+        open(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
     }
 
     // ---------------------------------------------------------------- 電話
@@ -587,10 +676,65 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         photoView.setImageDrawable(null)
     }
 
+    // ---------------------------------------------------------------- Web検索
+
+    private fun setUpWebView() {
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            textZoom = WEB_TEXT_ZOOM
+            allowFileAccess = false
+            allowContentAccess = false
+            setSupportMultipleWindows(false)
+        }
+        webView.webViewClient = object : WebViewClient() {
+            // ページ移動はアプリ内だけ。他のアプリを開くリンク (http/https 以外) は無視する。
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val scheme = request.url.scheme
+                return scheme != "https" && scheme != "http"
+            }
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                if (url == "about:blank") view.clearHistory()
+            }
+        }
+    }
+
+    private fun askQuery() {
+        goHome()
+        stage = Stage.ASK_QUERY
+        say("何を調べますか？") { startListening() }
+    }
+
+    private fun openWeb(query: String) {
+        goHome()
+        webOpen = true
+        homePanel.visibility = View.GONE
+        clockArea.visibility = View.GONE      // 結果を広く見せるため、時計と「とじて…」ボタンは隠す
+        exitButton.visibility = View.GONE
+        webPanel.visibility = View.VISIBLE
+        webView.loadUrl("https://www.google.com/search?hl=ja&safe=active&q=" + URLEncoder.encode(query, "UTF-8"))
+        say("「$query」を調べました。指で上下に動かすか、下のボタンを押してください。")
+    }
+
+    private fun closeWebPanel() {
+        if (webOpen) {
+            webView.stopLoading()
+            webView.loadUrl("about:blank")
+        }
+        webOpen = false
+        webPanel.visibility = View.GONE
+        clockArea.visibility = View.VISIBLE
+        exitButton.visibility = View.VISIBLE
+        homePanel.visibility = View.VISIBLE
+    }
+
     // ---------------------------------------------------------------- 家族向けメニュー (時計を長押し)
 
     private fun showFamilyMenu() {
-        val items = arrayOf("アプリ一覧", "Androidの設定", "ホームアプリの切り替え", "連絡先を読み込み直す", "許可をもう一度確認する")
+        val auto = if (Settings.canDrawOverlays(this)) "許可ずみ" else "未許可"
+        val every = if (WatchService.isEnabled(this)) "オン" else "オフ"
+        val items = arrayOf("アプリ一覧", "Androidの設定", "ホームアプリの切り替え", "連絡先を読み込み直す", "許可をもう一度確認する", "自動で開くための許可（いま: $auto）", "画面を点けるたびに開く（いま: $every）")
         AlertDialog.Builder(this)
             .setTitle("家族向けメニュー")
             .setItems(items) { _, which ->
@@ -600,6 +744,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                     2 -> open(Intent(Settings.ACTION_HOME_SETTINGS))
                     3 -> reloadContacts()
                     4 -> requestMissingPermissions()
+                    5 -> openAutoStartSetting()
+                    6 -> WatchService.setEnabled(this, !WatchService.isEnabled(this))
                 }
             }
             .setNegativeButton("とじる", null)
@@ -639,6 +785,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         const val MAX_FAVORITES = 5               // ホームに並べる連絡先ボタンの数
         const val MAX_CHOICES = 4                 // 同名候補を出す上限
         const val MAX_PHOTOS = 300                // さかのぼって見られる写真の枚数
+        const val WEB_TEXT_ZOOM = 130             // 検索結果の文字の大きさ (%)
         const val LISTEN_WATCHDOG_MS = 20_000L
         const val GREETING_INTERVAL_MS = 10 * 60 * 1000L
     }
