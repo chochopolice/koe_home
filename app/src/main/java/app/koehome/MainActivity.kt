@@ -711,7 +711,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     // ---------------------------------------------------------------- Google アシスタントへの引き継ぎ
 
     /**
-     * Google アシスタント (端末の既定のアシスタント) を呼び出す。
+     * 端末の「既定のアシスタント」(Google アシスタント / Gemini) を呼び出す。
      * 聞いた言葉をアシスタントに渡す公式の方法は無いため、もう一度話してもらう。
      */
     private fun handOffToAssistant(heardText: String) {
@@ -719,16 +719,49 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         val again = if (heardText.isBlank()) "もう一度、お話しください。" else "もう一度、「$heardText」と、お話しください。"
         say("グーグルアシスタントに代わります。音が鳴ったら、$again") {
             message.text = MSG_IDLE
-            try {
-                startActivity(Intent(Intent.ACTION_VOICE_COMMAND).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } catch (e: Exception) {
-                try {
-                    startActivity(Intent(Intent.ACTION_ASSIST).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                } catch (e2: Exception) {
-                    say("アシスタントを、呼び出せませんでした。")
-                }
+            val how = launchAssistant()
+            // どの方法で呼び出したかを画面に残す (うまく動かないときの手がかり)
+            heard.text = if (how != null) "アシスタント呼び出し：$how" else ""
+            if (how == null) {
+                say("アシスタントを、呼び出せませんでした。")
+                heard.text = "※ 設定 → アプリ → 標準のアプリ → デジタルアシスタント アプリ を確認してください"
             }
         }
+    }
+
+    /** 成功した方法の名前を返す。全部だめなら null。 */
+    private fun launchAssistant(): String? {
+        // 1) 正式な方法: ホームボタン長押しと同じく、既定のアシスタントを前面に出す
+        try {
+            if (showAssist(Bundle())) return "標準"
+        } catch (e: Exception) {
+            // 次の方法へ
+        }
+        // 2) アシスタントを開く汎用の呼び出し
+        val tries = listOf(
+            "アシスト" to Intent(Intent.ACTION_ASSIST),
+            "音声アシスト" to Intent("android.intent.action.VOICE_ASSIST"),
+            "音声コマンド" to Intent(Intent.ACTION_VOICE_COMMAND),
+        )
+        for ((name, intent) in tries) {
+            try {
+                startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return name
+            } catch (e: Exception) {
+                // 次の方法へ
+            }
+        }
+        // 3) Gemini アプリ / Google アプリを直接開く
+        for (pkg in listOf("com.google.android.apps.bard", "com.google.android.googlequicksearchbox")) {
+            val intent = packageManager.getLaunchIntentForPackage(pkg) ?: continue
+            try {
+                startActivity(intent)
+                return if (pkg.endsWith("bard")) "Geminiアプリ" else "Googleアプリ"
+            } catch (e: Exception) {
+                // 次へ
+            }
+        }
+        return null
     }
 
     // ---------------------------------------------------------------- Web検索
