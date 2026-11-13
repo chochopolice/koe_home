@@ -75,6 +75,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     private var seq = 0
     private var latestId = ""
     private var afterSpeech: (() -> Unit)? = null
+    private var keepSpeakingOnPause = false   // 別のアプリを開いたあとも案内を最後まで読む
 
     // 聞き取り
     private var recognizer: SpeechRecognizer? = null
@@ -169,7 +170,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         cancelListening()
         afterSpeech = null
         pendingSay = null
-        if (ttsReady) tts.stop()
+        if (ttsReady && !keepSpeakingOnPause) tts.stop()
+        keepSpeakingOnPause = false
     }
 
     override fun onDestroy() {
@@ -625,9 +627,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             return
         }
         goHome()
-        say("フォトを開きます。写真を検索する場合は、お声がけください。") {
-            message.text = MSG_IDLE
-            open(intent)
+        // 案内を読み上げながら、待たせずにすぐ Google フォトを開く
+        say(PHOTOS_GUIDE)
+        keepSpeakingOnPause = ttsReady
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            keepSpeakingOnPause = false
+            say("フォトを開けませんでした。")
         }
     }
 
@@ -891,6 +898,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         const val MAX_FAVORITES = 5               // ホームに並べる連絡先ボタンの数
         const val MAX_CHOICES = 6                 // 同名候補を出す上限
         const val GOOGLE_PHOTOS = "com.google.android.apps.photos"
+        const val PHOTOS_GUIDE = "フォトを開きます。写真を検索する場合は、「オーケー、グーグル」と呼びかけてから、お話しください。"
         const val MAX_PHOTOS = 300                // さかのぼって見られる写真の枚数
         const val FEW_PHOTOS = 5                  // これ以下なら「許可が一部だけ」の疑いを案内する
         const val WEB_TEXT_ZOOM = 130             // 検索結果の文字の大きさ (%)
