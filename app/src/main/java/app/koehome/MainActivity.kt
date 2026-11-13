@@ -130,6 +130,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         photoView.setOnTouchListener { _, e -> swipe.onTouchEvent(e) }
 
         talk.setOnClickListener { onTalkPressed() }
+        findViewById<Button>(R.id.openPhotos).setOnClickListener { run(Command.Photos) }
         findViewById<Button>(R.id.webDown).setOnClickListener { run(Command.ScrollDown) }
         findViewById<Button>(R.id.webUp).setOnClickListener { run(Command.ScrollUp) }
         findViewById<Button>(R.id.webBack).setOnClickListener { run(Command.Back) }
@@ -436,7 +437,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                 goHome()
                 say("いつもの画面に、もどります。") { exitToUsualHome() }
             }
-            Command.Photos -> openPhotos()
+            Command.Photos -> openGooglePhotos()
             is Command.Assistant -> handOffToAssistant(cmd.heard)
             is Command.Search -> if (cmd.query.isBlank()) askQuery() else openWeb(cmd.query)
             Command.ScrollDown -> if (webOpen) webView.pageDown(false) else run(Command.Unknown)
@@ -612,6 +613,23 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     }
 
     // ---------------------------------------------------------------- 写真
+
+    /**
+     * Google フォトのアプリを開く (ボタン・「写真見せて」の両方)。
+     * 入っていない端末では、こえホーム内の写真表示に切り替える。
+     */
+    private fun openGooglePhotos() {
+        val intent = packageManager.getLaunchIntentForPackage(GOOGLE_PHOTOS)
+        if (intent == null) {
+            openPhotos()
+            return
+        }
+        goHome()
+        say("フォトを開きます。写真を検索する場合は、お声がけください。") {
+            message.text = MSG_IDLE
+            open(intent)
+        }
+    }
 
     private fun openPhotos() {
         if (!granted(photoPermission)) {
@@ -872,6 +890,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         const val MAX_AUTO_RETRY = 2              // 自動で聞き直す回数
         const val MAX_FAVORITES = 5               // ホームに並べる連絡先ボタンの数
         const val MAX_CHOICES = 6                 // 同名候補を出す上限
+        const val GOOGLE_PHOTOS = "com.google.android.apps.photos"
         const val MAX_PHOTOS = 300                // さかのぼって見られる写真の枚数
         const val FEW_PHOTOS = 5                  // これ以下なら「許可が一部だけ」の疑いを案内する
         const val WEB_TEXT_ZOOM = 130             // 検索結果の文字の大きさ (%)

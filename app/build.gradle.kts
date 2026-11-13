@@ -11,8 +11,8 @@ android {
         applicationId = "app.koehome"
         minSdk = 28          // Android 9 以上
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.8"
+        versionCode = 9
+        versionName = "0.9"
     }
 
     // どこでビルドしても同じ署名になるよう、同梱のデバッグ用キーを使う。

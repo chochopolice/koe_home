@@ -60,6 +60,16 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
+                <Button
+                    android:id="@+id/openPhotos"
+                    android:layout_width="match_parent"
+                    android:layout_height="88dp"
+                    android:layout_marginBottom="12dp"
+                    android:backgroundTint="@color/photo"
+                    android:text="🖼 写真を見る"
+                    android:textColor="@color/white"
+                    android:textSize="28sp" />
+
                 <TextView
                     android:id="@+id/listHeader"
                     android:layout_width="match_parent"

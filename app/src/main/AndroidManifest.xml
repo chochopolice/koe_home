@@ -45,6 +45,7 @@
         <intent>
             <action android:name="android.intent.action.VOICE_ASSIST" />
         </intent>
+        <package android:name="com.google.android.apps.photos" />
         <package android:name="com.google.android.apps.bard" />
         <package android:name="com.google.android.googlequicksearchbox" />
     </queries>
