@@ -7,6 +7,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # 公開用の鍵がシークレットに登録されているときだけ、AAB も作る
+      HAS_UPLOAD_KEY: ${{ secrets.KOEHOME_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -14,8 +17,28 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+
+      # ふだんの確認用 (同梱のデバッグ鍵で署名した APK)
       - run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: koehome-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      # Google Play 提出用 (アップロード鍵で署名した AAB)
+      - name: Build release bundle
+        if: env.HAS_UPLOAD_KEY == 'true'
+        env:
+          KOEHOME_KEYSTORE_BASE64: ${{ secrets.KOEHOME_KEYSTORE_BASE64 }}
+          KOEHOME_KEYSTORE_PASSWORD: ${{ secrets.KOEHOME_KEYSTORE_PASSWORD }}
+          KOEHOME_KEY_ALIAS: ${{ secrets.KOEHOME_KEY_ALIAS }}
+          KOEHOME_KEY_PASSWORD: ${{ secrets.KOEHOME_KEY_PASSWORD }}
+        run: |
+          echo "$KOEHOME_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          KOEHOME_KEYSTORE="$RUNNER_TEMP/upload.jks" ./gradlew bundleRelease --no-daemon
+          rm -f "$RUNNER_TEMP/upload.jks"
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_UPLOAD_KEY == 'true'
+        with:
+          name: koehome-release-aab
+          path: app/build/outputs/bundle/release/*.aab
