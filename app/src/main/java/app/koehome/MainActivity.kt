@@ -16,6 +16,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.MediaStore
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -114,12 +115,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
 
         talk.setOnClickListener { onTalkPressed() }
         findViewById<Button>(R.id.openPhotos).apply {
-            text = iconLabel(R.drawable.ic_photo, "写真を見る", 28f)
+            text = iconLabel(R.drawable.ic_album, "写真を見る", 28f)
             setOnClickListener { run(Command.Photos) }
+        }
+        findViewById<Button>(R.id.openCamera).apply {
+            text = iconLabel(R.drawable.ic_photo, "写真を撮る", 28f)
+            setOnClickListener { run(Command.Camera) }
         }
         lineButton = findViewById(R.id.openLine)
         lineButton.setOnClickListener { run(Command.Line) }
-        findViewById<Button>(R.id.exit).text = iconLabel(R.drawable.ic_home, "✕ とじて、いつもの画面へ", 22f)
+        findViewById<Button>(R.id.exit).text = iconLabel(R.drawable.ic_home, "いつもの画面へ", 22f)
         findViewById<Button>(R.id.webDown).setOnClickListener { run(Command.ScrollDown) }
         findViewById<Button>(R.id.webUp).setOnClickListener { run(Command.ScrollUp) }
         findViewById<Button>(R.id.webBack).setOnClickListener { run(Command.Back) }
@@ -465,6 +470,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             }
             Command.Photos -> openGooglePhotos()
             Command.Line -> openLine()
+            Command.Camera -> openCamera()
             is Command.Assistant -> handOffToAssistant(cmd.heard)
             is Command.Search -> if (cmd.query.isBlank()) askQuery() else openWeb(cmd.query)
             Command.ScrollDown -> if (webOpen) webView.pageDown(false) else run(Command.Unknown)
@@ -666,6 +672,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         } catch (e: Exception) {
             keepSpeakingOnPause = false
             say("ラインを開けませんでした。")
+        }
+    }
+
+    // ---------------------------------------------------------------- カメラ
+
+    /** 端末のカメラアプリを開く。撮るのはカメラアプリなので、こえホームにカメラの権限は要らない。 */
+    private fun openCamera() {
+        goHome()
+        say("カメラを開きます。")
+        keepSpeakingOnPause = ttsReady
+        try {
+            startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) {
+            keepSpeakingOnPause = false
+            say("カメラを開けませんでした。")
         }
     }
 

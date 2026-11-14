@@ -75,6 +75,7 @@ sealed class Command {
     object Unknown : Command()
     object Greeting : Command()
     object Line : Command()
+    object Camera : Command()
     object ScrollDown : Command()
     object ScrollUp : Command()
     object Back : Command()
@@ -97,6 +98,7 @@ object CommandParser {
     private val STOP = listOf("やめ", "もどる", "戻る", "もどって", "戻って", "とじ", "閉じ", "おわり", "終わり", "おしまい", "ほむ", "きゃんせる", "最初")
     private val EXIT = listOf("終了", "しゅうりょう", "いつもの", "あぷりをとじ", "あぷりを閉じ")
     private val LINE = listOf("らいん", "line")
+    private val TAKE_PHOTO = listOf("撮", "写真をとる", "写真をとって", "写真とる", "写真とって", "しゃしんをとる", "しゃしんをとって", "しゃしんとる", "しゃしんとって")
     private val ASSIST = listOf("あしすたんと", "じぇみに", "おけぐぐる", "ねえぐぐる")
     // 「写真見せて」から取り除く決まり文句。これ以外の言葉が残れば「条件つきの写真探し」とみなす
     private val PHOTO_FILLER = Regex("(しゃしん|写真|ふぉと|あるばむ|画像|みせて|見せて|みたい|見たい|みせ|見せ|だして|出して|ひらいて|開いて|ひょうじ|表示|ください|下さい|ちょうだい|おねがいします|お願いします|おねがい|お願い|ちょっと|また|して|を|の|が|は|も|ね|よ|で|に|と|か|な|さ|あ|え|お)")
@@ -304,6 +306,8 @@ object CommandParser {
         if (t.hasAny(ASSIST)) return Command.Assistant("")
         // 「ラインを開いて」。「オンライン診療とは」のような長い文は検索に回す
         if (t.length <= 10 && t.hasAny(LINE)) return Command.Line
+        // 「写真を撮りたい」「カメラ」。「おすすめのカメラを教えて」のような長い文は検索に回す
+        if ((t.length <= 12 && t.hasAny(TAKE_PHOTO)) || (t.length <= 8 && t.contains("かめら"))) return Command.Camera
         if (t.hasAny(SEARCH) && !t.hasAny(CLOSE)) return Command.Search(extractQuery(texts[0]))
         // 画面送りや中止の言葉は短いひとことのときだけ効かせる
         // (「上野動物園の営業時間は」「夏休みの終わりはいつ」を検索に回すため)

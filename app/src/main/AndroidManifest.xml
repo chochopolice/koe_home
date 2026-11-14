@@ -41,6 +41,9 @@
         <intent>
             <action android:name="android.intent.action.VOICE_ASSIST" />
         </intent>
+        <intent>
+            <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+        </intent>
         <package android:name="com.google.android.apps.photos" />
         <package android:name="jp.naver.line.android" />
         <package android:name="com.google.android.apps.bard" />

@@ -38,7 +38,7 @@
         android:layout_height="64dp"
         android:layout_marginTop="4dp"
         android:backgroundTint="@color/no"
-        android:text="✕ とじて、いつもの画面へ"
+        android:text="いつもの画面へ"
         android:textAllCaps="false"
         android:textColor="@color/white"
         android:textSize="22sp" />
@@ -68,6 +68,17 @@
                     android:layout_marginBottom="12dp"
                     android:backgroundTint="@color/photo"
                     android:text="写真を見る"
+                    android:textAllCaps="false"
+                    android:textColor="@color/white"
+                    android:textSize="28sp" />
+
+                <Button
+                    android:id="@+id/openCamera"
+                    android:layout_width="match_parent"
+                    android:layout_height="88dp"
+                    android:layout_marginBottom="12dp"
+                    android:backgroundTint="@color/camera"
+                    android:text="写真を撮る"
                     android:textAllCaps="false"
                     android:textColor="@color/white"
                     android:textSize="28sp" />
