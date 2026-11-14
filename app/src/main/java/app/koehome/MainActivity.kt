@@ -33,7 +33,10 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
@@ -146,6 +149,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         showSub("")
         reloadContacts()
         WatchService.sync(this)   // 許可の画面から戻ってきたときにも反映する
+        CareNotifier.touch(this)  // 家族への通知: 開いたので数え直す
         refreshLineButton()
         webView.onResume()
         // しばらくぶりに画面を見たときだけ、使い方をひとこと案内する
@@ -840,7 +844,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     private fun showFamilyMenu() {
         val auto = if (Settings.canDrawOverlays(this)) "許可ずみ" else "未許可"
         val every = if (WatchService.isEnabled(this)) "オン" else "オフ"
-        val items = arrayOf("アプリ一覧", "Androidの設定", "ホームアプリの切り替え", "連絡先を読み込み直す", "許可をもう一度確認する", "自動で開くための許可（いま: $auto）", "画面を点けるたびに開く（いま: $every）")
+        val care = if (CareNotifier.isEnabled(this)) "オン" else "オフ"
+        val items = arrayOf("アプリ一覧", "Androidの設定", "ホームアプリの切り替え", "連絡先を読み込み直す", "許可をもう一度確認する", "自動で開くための許可（いま: $auto）", "画面を点けるたびに開く（いま: $every）", "家族への通知・SMS（いま: $care）")
         AlertDialog.Builder(this)
             .setTitle("家族向けメニュー")
             .setItems(items) { _, which ->
@@ -852,6 +857,82 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                     4 -> requestMissingPermissions()
                     5 -> openAutoStartSetting()
                     6 -> WatchService.setEnabled(this, !WatchService.isEnabled(this))
+                    7 -> showCareSettings()
+                }
+            }
+            .setNegativeButton("とじる", null)
+            .show()
+    }
+
+    /** 家族への通知 (SMS) の設定画面。 */
+    private fun showCareSettings() {
+        val pad = dp(20)
+        val note = TextView(this).apply {
+            textSize = 14f
+            text = "こえホームが24時間・48時間・72時間開かれなかったとき、下の番号にSMSを送ります。" +
+                "こえホームを開くと数え直します。\n" +
+                "・ご本人の同意を得てから設定してください。\n" +
+                "・送信料は、この電話の契約にかかります。\n" +
+                "・電源が切れているとき、圏外のときは送れません。"
+        }
+        val nameEdit = EditText(this).apply {
+            hint = "ご本人の名前（例：山田花子）"
+            setSingleLine()
+            setText(CareNotifier.name(this@MainActivity))
+        }
+        val numbersEdit = EditText(this).apply {
+            hint = "通知先の電話番号（3件まで。カンマで区切る）"
+            setSingleLine()
+            setText(CareNotifier.numbers(this@MainActivity).joinToString(", "))
+        }
+        val enabledBox = CheckBox(this).apply {
+            text = "この通知を使う"
+            isChecked = CareNotifier.isEnabled(this@MainActivity)
+        }
+        val testBox = CheckBox(this).apply {
+            text = "動作確認モード（24時間を2分に短縮）"
+            isChecked = CareNotifier.isTestMode(this@MainActivity)
+            visibility = if (CareNotifier.isDebuggable(this@MainActivity)) View.VISIBLE else View.GONE
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, dp(8), pad, 0)
+            addView(note)
+            addView(nameEdit)
+            addView(numbersEdit)
+            addView(enabledBox)
+            addView(testBox)
+        }
+
+        // 入力を保存し、必要なら SMS の許可を求める。保存できたら true。
+        fun save(): Boolean {
+            val numbers = CareLogic.parseNumbers(numbersEdit.text.toString())
+            if (enabledBox.isChecked && numbers.isEmpty()) {
+                message.text = "電話番号を確認してください。数字10桁以上で入力します。"
+                return false
+            }
+            CareNotifier.save(this, enabledBox.isChecked, nameEdit.text.toString(), numbers, testBox.isChecked)
+            if (enabledBox.isChecked && !CareNotifier.hasPermission(this)) {
+                requestPermissions(arrayOf(Manifest.permission.SEND_SMS), 2)
+            }
+            message.text = if (enabledBox.isChecked) "家族への通知を設定しました（通知先 ${numbers.size}件）。" else "家族への通知をオフにしました。"
+            return true
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("家族への通知（SMS）")
+            .setView(ScrollView(this).apply { addView(box) })
+            .setPositiveButton("保存") { _, _ -> save() }
+            .setNeutralButton("保存してテスト送信") { _, _ ->
+                if (save()) {
+                    if (!CareNotifier.hasPermission(this)) {
+                        message.text = "SMSの許可を出してから、もう一度「保存してテスト送信」を押してください。"
+                    } else {
+                        io.execute {
+                            val ok = CareNotifier.send(this, CareLogic.testMessage(CareNotifier.name(this)))
+                            ui.post { message.text = if (ok) "テストのSMSを送りました。届いたか確認してください。" else "SMSを送れませんでした。番号と電波を確認してください。" }
+                        }
+                    }
                 }
             }
             .setNegativeButton("とじる", null)
