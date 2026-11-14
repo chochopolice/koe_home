@@ -166,34 +166,34 @@
                 <Button
                     android:id="@+id/webUp"
                     android:layout_width="0dp"
-                    android:layout_height="72dp"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
                     android:text="▲ 上"
-                    android:textSize="22sp" />
+                    android:textSize="18sp" />
 
                 <Button
                     android:id="@+id/webDown"
                     android:layout_width="0dp"
-                    android:layout_height="72dp"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
                     android:text="▼ 下"
-                    android:textSize="22sp" />
+                    android:textSize="18sp" />
 
                 <Button
                     android:id="@+id/webBack"
                     android:layout_width="0dp"
-                    android:layout_height="72dp"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
                     android:text="◀ 前"
-                    android:textSize="22sp" />
+                    android:textSize="18sp" />
 
                 <Button
                     android:id="@+id/webClose"
                     android:layout_width="0dp"
-                    android:layout_height="72dp"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
                     android:text="とじる"
-                    android:textSize="22sp" />
+                    android:textSize="18sp" />
             </LinearLayout>
         </LinearLayout>
     </FrameLayout>

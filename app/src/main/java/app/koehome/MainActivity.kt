@@ -163,6 +163,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
 
     override fun onResume() {
         super.onResume()
+        showSub("")
         reloadContacts()
         WatchService.sync(this)   // 許可の画面から戻ってきたときにも反映する
         webView.onResume()
@@ -197,6 +198,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         goHome()
+        showSub("")
         message.text = MSG_IDLE
     }
 
@@ -208,6 +210,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         }
         // ホーム画面なので閉じない。最初の状態に戻すだけ。
         goHome()
+        showSub("")
         message.text = MSG_IDLE
     }
 
@@ -243,7 +246,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         }
         if (!ttsReady) {
             ttsFailed = true
-            heard.text = "※ 日本語の読み上げ音声が入っていません（設定 → テキスト読み上げ）"
+            showSub("※ 日本語の読み上げ音声が入っていません（設定 → テキスト読み上げ）", HINT_KEEP_MS)
         } else {
             tts.setSpeechRate(SPEECH_RATE)
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -326,7 +329,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         listening = true
         val mySession = ++session
         updateTalkButton()
-        heard.text = "聞いています…"
+        showSub("聞いています…", LISTEN_WATCHDOG_MS)
         r.startListening(intent)
 
         // 認識エンジンが黙り込んだときの保険
@@ -345,6 +348,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             listening = false
             session++
             updateTalkButton()
+            showSub("")
         }
     }
 
@@ -364,13 +368,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             onMiss()
             return
         }
-        heard.text = "聞こえた言葉：「${texts[0]}」"
+        showSub("聞こえた言葉：「${texts[0]}」")
         run(CommandParser.parse(texts, contacts, stage, choices, photoOpen, webOpen))
     }
 
     override fun onPartialResults(partialResults: Bundle?) {
         val t = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-        if (listening && !t.isNullOrBlank()) heard.text = t
+        if (listening && !t.isNullOrBlank()) showSub(t)
     }
 
     override fun onError(error: Int) {
@@ -379,6 +383,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         listening = false
         session++
         updateTalkButton()
+        showSub("")
         when (error) {
             SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> onMiss()
             SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT, SpeechRecognizer.ERROR_SERVER ->
@@ -396,7 +401,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         }
     }
 
-    override fun onReadyForSpeech(params: Bundle?) { heard.text = "どうぞ、お話しください" }
+    override fun onReadyForSpeech(params: Bundle?) { showSub("どうぞ、お話しください", LISTEN_WATCHDOG_MS) }
     override fun onBeginningOfSpeech() {}
     override fun onRmsChanged(rmsdB: Float) {}
     override fun onBufferReceived(buffer: ByteArray?) {}
@@ -645,7 +650,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             startActivity(intent)
         } catch (e: Exception) {
             keepSpeakingOnPause = false
-            say("フォトを開けませんでした。")
+            say("写真を開けませんでした。")
         }
     }
 
@@ -687,7 +692,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                     showPhoto()
                     // Android 14 以降で「選択した写真のみ許可」にすると、選んだ数枚しか見えない
                     if (Build.VERSION.SDK_INT >= 34 && list.size <= FEW_PHOTOS) {
-                        heard.text = "※ 写真が少ないときは：設定 → アプリ → こえホーム → 権限 → 写真と動画 →「常にすべて許可」"
+                        showSub("※ 写真が少ないときは：設定 → アプリ → こえホーム → 権限 → 写真と動画 →「常にすべて許可」", HINT_KEEP_MS)
                     }
                     val count = if (list.size >= MAX_PHOTOS) "" else "写真が${list.size}枚あります。"
                     say(
@@ -752,15 +757,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
      */
     private fun handOffToAssistant(heardText: String) {
         goHome()
-        val again = if (heardText.isBlank()) "もう一度、お話しください。" else "もう一度、「$heardText」と、お話しください。"
-        say("グーグルアシスタントに代わります。音が鳴ったら、$again") {
+        val again = if (heardText.isBlank()) "もう一度、「オーケーグーグル」と呼びかけてから、お話しください。"
+        else "もう一度、「オーケーグーグル、$heardText」と、お話しください。"
+        say("グーグルアシスタントに代わります。$again") {
             message.text = MSG_IDLE
             val how = launchAssistant()
             // どの方法で呼び出したかを画面に残す (うまく動かないときの手がかり)
-            heard.text = if (how != null) "アシスタント呼び出し：$how" else ""
+            showSub(if (how != null) "アシスタント呼び出し：$how" else "")
             if (how == null) {
                 say("アシスタントを、呼び出せませんでした。")
-                heard.text = "※ 設定 → アプリ → 標準のアプリ → デジタルアシスタント アプリ を確認してください"
+                showSub("※ 設定 → アプリ → 標準のアプリ → デジタルアシスタント アプリ を確認してください", HINT_KEEP_MS)
             }
         }
     }
@@ -837,8 +843,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         clockArea.visibility = View.GONE      // 結果を広く見せるため、時計と「とじて…」ボタンは隠す
         exitButton.visibility = View.GONE
         webPanel.visibility = View.VISIBLE
+        setCompactBottom(true)
         webView.loadUrl("https://www.google.com/search?hl=ja&safe=active&q=" + URLEncoder.encode(query, "UTF-8"))
         say("「$query」を調べました。指で上下に動かすか、下のボタンを押してください。")
+    }
+
+    /** Web 表示中だけ、メッセージを1行に、「話す」ボタンを低くする。 */
+    private fun setCompactBottom(compact: Boolean) {
+        message.textSize = if (compact) 18f else 26f
+        message.minLines = if (compact) 1 else 2
+        message.maxLines = if (compact) 1 else Int.MAX_VALUE
+        message.ellipsize = if (compact) android.text.TextUtils.TruncateAt.END else null
+        talk.textSize = if (compact) 28f else 40f
+        talk.layoutParams = talk.layoutParams.apply { height = dp(if (compact) 80 else 132) }
     }
 
     private fun closeWebPanel() {
@@ -848,6 +865,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         }
         webOpen = false
         webPanel.visibility = View.GONE
+        setCompactBottom(false)
         clockArea.visibility = View.VISIBLE
         exitButton.visibility = View.VISIBLE
         homePanel.visibility = View.VISIBLE
@@ -902,6 +920,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
+    private val clearSub = Runnable { heard.text = "" }
+
+    /**
+     * メッセージの下の補足行 (「聞こえた言葉」など) を出す。
+     * 前回の結果が残り続けないよう、一定時間たったら自動で消す。空文字ならすぐ消す。
+     */
+    private fun showSub(text: CharSequence, keepMs: Long = SUB_KEEP_MS) {
+        ui.removeCallbacks(clearSub)
+        heard.text = text
+        if (text.isNotEmpty()) ui.postDelayed(clearSub, keepMs)
+    }
+
     /** 絵文字の代わりに、画像のアイコンを文字の先頭に置いたボタン用の文字列を作る。 */
     private fun iconLabel(resId: Int, label: String, textSp: Float): CharSequence {
         val icon = getDrawable(resId) ?: return label
@@ -945,12 +975,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         const val MAX_FAVORITES = 5               // ホームに並べる連絡先ボタンの数
         const val MAX_CHOICES = 6                 // 同名候補を出す上限
         const val GOOGLE_PHOTOS = "com.google.android.apps.photos"
-        const val PHOTOS_GUIDE = "フォトを開きます。写真を検索する場合は、「オーケー、グーグル」と呼びかけてから、お話しください。"
+        const val PHOTOS_GUIDE = "写真を開きます。写真を検索する場合は、「オーケー、グーグル」と呼びかけてから、お話しください。"
         const val ICON_SCALE = 1.5f               // ボタンのアイコンの大きさ (文字の高さの何倍か)
         const val MAX_PHOTOS = 300                // さかのぼって見られる写真の枚数
         const val FEW_PHOTOS = 5                  // これ以下なら「許可が一部だけ」の疑いを案内する
         const val WEB_TEXT_ZOOM = 130             // 検索結果の文字の大きさ (%)
         const val LISTEN_WATCHDOG_MS = 20_000L
+        const val HINT_KEEP_MS = 60_000L          // 設定の案内 (※) を出しておく時間
+        const val SUB_KEEP_MS = 12_000L           // 補足行 (聞こえた言葉など) を出しておく時間
         const val GREETING_INTERVAL_MS = 10 * 60 * 1000L
     }
 }
