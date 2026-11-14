@@ -62,6 +62,10 @@
 `MainActivity.kt` 末尾の `companion object`：読み上げ速度、聞き直し回数、ボタンに出す人数、写真の枚数、検索結果の文字の大きさ。
 言い回しの追加は `Commands.kt` の単語リスト。
 
+## ビルド環境
+
+対象 API 36（Android 16）、Android Gradle Plugin 8.13.0、Gradle 8.13、Kotlin 2.1.20、JDK 17。最低対応は Android 9（API 28）。
+
 ## 既知の制約
 
 - 音声認識は端末の Google 音声認識を使用。機種によっては通信が必要です。

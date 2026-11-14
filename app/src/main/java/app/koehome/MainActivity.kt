@@ -33,6 +33,7 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -40,6 +41,8 @@ import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -107,6 +110,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        applySystemBarPadding()
+        registerBackHandler()
         volumeControlStream = AudioManager.STREAM_MUSIC
 
         message = findViewById(R.id.message)
@@ -206,8 +211,46 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         message.text = MSG_IDLE
     }
 
+    /**
+     * Android 13 以降の新しい「戻る」の受け取り方。
+     * 対象 API 36 では onBackPressed が呼ばれなくなるため、こちらで受ける。
+     */
+    private fun registerBackHandler() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                OnBackInvokedCallback { handleBack() },
+            )
+        }
+    }
+
+    /**
+     * 対象 API 35 以降は画面が端まで広がるため、ステータスバーや
+     * ナビゲーションバーに重ならないよう、その分だけ内側に余白を足す。
+     */
+    private fun applySystemBarPadding() {
+        val base = dp(16)
+        findViewById<View>(R.id.root).setOnApplyWindowInsetsListener { v, insets ->
+            if (Build.VERSION.SDK_INT >= 30) {
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                v.setPadding(base + bars.left, base + bars.top, base + bars.right, base + bars.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                v.setPadding(
+                    base + insets.systemWindowInsetLeft, base + insets.systemWindowInsetTop,
+                    base + insets.systemWindowInsetRight, base + insets.systemWindowInsetBottom,
+                )
+            }
+            insets
+        }
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        handleBack()
+    }
+
+    private fun handleBack() {
         if (webOpen && webView.canGoBack()) {
             webView.goBack()
             return
