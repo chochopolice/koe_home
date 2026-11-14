@@ -8,6 +8,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.drawable.Drawable
 import android.graphics.ImageDecoder
 import android.media.AudioManager
 import android.net.Uri
@@ -23,6 +26,9 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ImageSpan
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
@@ -131,7 +137,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         photoView.setOnTouchListener { _, e -> swipe.onTouchEvent(e) }
 
         talk.setOnClickListener { onTalkPressed() }
-        findViewById<Button>(R.id.openPhotos).setOnClickListener { run(Command.Photos) }
+        findViewById<Button>(R.id.openPhotos).apply {
+            text = iconLabel(R.drawable.ic_photo, "写真を見る", 28f)
+            setOnClickListener { run(Command.Photos) }
+        }
+        findViewById<Button>(R.id.exit).text = iconLabel(R.drawable.ic_home, "✕ とじて、いつもの画面へ", 22f)
         findViewById<Button>(R.id.webDown).setOnClickListener { run(Command.ScrollDown) }
         findViewById<Button>(R.id.webUp).setOnClickListener { run(Command.ScrollUp) }
         findViewById<Button>(R.id.webBack).setOnClickListener { run(Command.Back) }
@@ -458,8 +468,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                 say("いま、${SimpleDateFormat("ah時m分", Locale.JAPAN).format(Date())}です。")
             Command.Date ->
                 say("今日は、${SimpleDateFormat("M月d日 EEEE", Locale.JAPAN).format(Date())}です。")
+            Command.Greeting -> say("はい。ご用件を、どうぞ。")
             Command.Help ->
-                say("「だれだれさんに電話」、「写真を見せて」、「なになにを調べて」、「いま何時」と、話しかけてください。やめたいときは、「やめる」と言ってください。")
+                say("「だれだれさんに電話」、「写真を見せて」、「いま何時」と、話しかけてください。調べものは、「グアムの天気は」のように、そのまま聞いてください。やめたいときは、「やめる」と言ってください。")
             Command.Unknown -> when (stage) {
                 Stage.CONFIRM -> onMiss("「はい」か「いいえ」で、お答えください。")
                 Stage.CHOOSE -> onMiss("どなたにかけますか。お名前を、もう一度お願いします。")
@@ -467,7 +478,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                 Stage.ASK_NAME -> onMiss("どなたにかけますか。お名前を、もう一度お願いします。")
                 Stage.IDLE -> {
                     misses = 0
-                    say("すみません、わかりませんでした。「だれだれさんに電話」や、「写真を見せて」と言ってみてください。")
+                    say("すみません、聞き取れませんでした。もう一度、お話しください。")
                 }
             }
         }
@@ -560,7 +571,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         contactList.removeAllViews()
         for ((i, c) in list.withIndex()) {
             val b = Button(this).apply {
-                text = if (numbered) "${i + 1}番　${c.name}" else "☎ ${c.name}"
+                text = if (numbered) "${i + 1}番　${c.name}" else iconLabel(R.drawable.ic_call, c.name, 28f)
                 textSize = 28f
                 isAllCaps = false
                 minimumHeight = dp(88)
@@ -891,6 +902,42 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
+    /** 絵文字の代わりに、画像のアイコンを文字の先頭に置いたボタン用の文字列を作る。 */
+    private fun iconLabel(resId: Int, label: String, textSp: Float): CharSequence {
+        val icon = getDrawable(resId) ?: return label
+        val size = (textSp * ICON_SCALE * resources.displayMetrics.scaledDensity).toInt()
+        icon.setBounds(0, 0, size, size)
+        return SpannableString("*  $label").apply {
+            setSpan(CenteredImageSpan(icon), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
+    /** 文字の行の上下中央にそろえて画像を描く (標準の ImageSpan は下ぞろえのため)。 */
+    private class CenteredImageSpan(icon: Drawable) : ImageSpan(icon) {
+        override fun getSize(paint: Paint, text: CharSequence?, start: Int, end: Int, fm: Paint.FontMetricsInt?): Int {
+            val bounds = drawable.bounds
+            if (fm != null) {
+                val font = paint.fontMetricsInt
+                val center = (font.ascent + font.descent) / 2
+                val half = bounds.height() / 2
+                fm.ascent = minOf(font.ascent, center - half)
+                fm.top = fm.ascent
+                fm.descent = maxOf(font.descent, center + half)
+                fm.bottom = fm.descent
+            }
+            return bounds.right
+        }
+
+        override fun draw(canvas: Canvas, text: CharSequence?, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int, paint: Paint) {
+            val font = paint.fontMetricsInt
+            val offsetY = y + (font.ascent + font.descent) / 2 - drawable.bounds.height() / 2
+            canvas.save()
+            canvas.translate(x, offsetY.toFloat())
+            drawable.draw(canvas)
+            canvas.restore()
+        }
+    }
+
     private companion object {
         const val MSG_IDLE = "下の大きなボタンを押して、お話しください。"
         const val SPEECH_RATE = 0.9f              // 読み上げ速度 (1.0 が標準。小さいほどゆっくり)
@@ -899,6 +946,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         const val MAX_CHOICES = 6                 // 同名候補を出す上限
         const val GOOGLE_PHOTOS = "com.google.android.apps.photos"
         const val PHOTOS_GUIDE = "フォトを開きます。写真を検索する場合は、「オーケー、グーグル」と呼びかけてから、お話しください。"
+        const val ICON_SCALE = 1.5f               // ボタンのアイコンの大きさ (文字の高さの何倍か)
         const val MAX_PHOTOS = 300                // さかのぼって見られる写真の枚数
         const val FEW_PHOTOS = 5                  // これ以下なら「許可が一部だけ」の疑いを案内する
         const val WEB_TEXT_ZOOM = 130             // 検索結果の文字の大きさ (%)

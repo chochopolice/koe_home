@@ -73,6 +73,7 @@ sealed class Command {
     object Help : Command()
     object CallUnknown : Command()
     object Unknown : Command()
+    object Greeting : Command()
     object ScrollDown : Command()
     object ScrollUp : Command()
     object Back : Command()
@@ -107,8 +108,14 @@ object CommandParser {
     private val PREV = listOf("まえ", "前", "あたらしい", "新しい", "さっき")
     private val PHOTOS = listOf("しゃしん", "写真", "ふぉと", "あるばむ", "画像")
     private val CALL = listOf("でんわ", "電話", "かけて", "かける", "かけたい", "こる", "通話", "連絡")
-    private val TIME = listOf("何時", "なんじ", "時間", "じかん", "時刻")
-    private val DATE = listOf("何日", "なんにち", "日付", "ひづけ", "曜日", "ようび", "今日", "きょう")
+    // 「今日の天気は」「営業時間は」を日時の質問と取り違えないよう、はっきりした言い方だけに絞る
+    private val TIME = listOf("何時", "なんじ", "時刻", "今の時間", "いまの時間", "いまのじかん", "時間を教", "時間教", "時間をおし", "じかんをおし")
+    private val DATE = listOf("何日", "なんにち", "日付", "ひづけ", "何曜", "なんよう", "今日は何", "きょうはなん")
+    private val GREET = listOf("こんにちは", "こんばんは", "おはよう", "ありがとう", "おやすみ", "さようなら")
+    // 名前だけのひとことか判断するときに取り除く言葉
+    private val NAME_FILLER = Regex("(さん|ちゃん|くん|君|先生|様|さま|おねがいします|お願いします|おねがい|お願い|です|に|へ|を|は)")
+    private const val MIN_SEARCH_LENGTH = 4      // これより短い言葉は聞き違いとみなし、検索しない
+    private const val MAX_NAME_ONLY_LENGTH = 7   // 名前だけのひとこととみなす長さ
     private val HELP = listOf("つかいかた", "使い方", "なにができ", "何ができ", "へるぷ", "できること")
 
     private fun String.hasAny(words: List<String>) = words.any { contains(it) }
@@ -294,19 +301,23 @@ object CommandParser {
 
         if (t.hasAny(ASSIST)) return Command.Assistant("")
         if (t.hasAny(SEARCH) && !t.hasAny(CLOSE)) return Command.Search(extractQuery(texts[0]))
-        if (webOpen) {
+        // 画面送りや中止の言葉は短いひとことのときだけ効かせる
+        // (「上野動物園の営業時間は」「夏休みの終わりはいつ」を検索に回すため)
+        if (webOpen && t.length <= 6) {
             if (t.hasAny(DOWN)) return Command.ScrollDown
             if (t.hasAny(UP)) return Command.ScrollUp
             if (t.hasAny(BACK)) return Command.Back
         }
-        if (photoOpen) {
+        if (photoOpen && t.length <= 10) {
             if (t.hasAny(NEXT)) return Command.Next
             if (t.hasAny(PREV)) return Command.Prev
             // 写真を見ている最中の「写真見せて」は、最初に戻さず次の1枚へ進める
             if (t.hasAny(PHOTOS)) return Command.Next
         }
-        if (t.hasAny(EXIT)) return Command.Exit
-        if (t.hasAny(STOP)) return Command.Stop
+        if (t.length <= 12) {
+            if (t.hasAny(EXIT)) return Command.Exit
+            if (t.hasAny(STOP)) return Command.Stop
+        }
         if (t.hasAny(PHOTOS)) {
             // 「去年の桜の写真」のように条件がつくものは、探すのが得意な Google アシスタントに任せる
             val rest = t.replace(PHOTO_FILLER, "")
@@ -320,8 +331,14 @@ object CommandParser {
         if (t.hasAny(TIME)) return Command.Time
         if (t.hasAny(DATE)) return Command.Date
         if (t.hasAny(HELP)) return Command.Help
-        // 名前だけ言われた場合も電話とみなす (発信前に必ず確認するので安全)
-        if (m.contacts.isNotEmpty()) return Command.Call(m.contacts, m.spoken)
+        // 名前だけの短いひとことは電話とみなす (発信前に必ず確認するので安全)。
+        // 「山田電機の営業時間は」のような長い文は電話ではなく検索に回す。
+        if (m.contacts.isNotEmpty() && t.replace(NAME_FILLER, "").length <= MAX_NAME_ONLY_LENGTH) {
+            return Command.Call(m.contacts, m.spoken)
+        }
+        if (t.hasAny(GREET)) return Command.Greeting
+        // どれにも当たらない言葉は、そのまま Web 検索する (「グアムの天気は？」「昨日の日経平均は？」)
+        if (t.length >= MIN_SEARCH_LENGTH) return Command.Search(extractQuery(texts[0]))
         return Command.Unknown
     }
 }
