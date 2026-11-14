@@ -99,62 +99,6 @@
             </LinearLayout>
         </ScrollView>
 
-        <LinearLayout
-            android:id="@+id/photoPanel"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="#000000"
-            android:orientation="vertical"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/photoInfo"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:padding="6dp"
-                android:textColor="@color/white"
-                android:textSize="20sp" />
-
-            <ImageView
-                android:id="@+id/photo"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:contentDescription="写真"
-                android:scaleType="fitCenter" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/photoPrev"
-                    android:layout_width="0dp"
-                    android:layout_height="72dp"
-                    android:layout_weight="1"
-                    android:text="◀ 前"
-                    android:textSize="24sp" />
-
-                <Button
-                    android:id="@+id/photoClose"
-                    android:layout_width="0dp"
-                    android:layout_height="72dp"
-                    android:layout_weight="1"
-                    android:text="とじる"
-                    android:textSize="24sp" />
-
-                <Button
-                    android:id="@+id/photoNext"
-                    android:layout_width="0dp"
-                    android:layout_height="72dp"
-                    android:layout_weight="1"
-                    android:text="次 ▶"
-                    android:textSize="24sp" />
-            </LinearLayout>
-        </LinearLayout>
-
         <!-- Web検索の結果 -->
         <LinearLayout
             android:id="@+id/webPanel"

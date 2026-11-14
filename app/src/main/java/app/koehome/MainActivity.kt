@@ -3,15 +3,12 @@ package app.koehome
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.drawable.Drawable
-import android.graphics.ImageDecoder
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -19,7 +16,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.provider.MediaStore
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -29,8 +25,6 @@ import android.speech.tts.UtteranceProgressListener
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ImageSpan
-import android.view.GestureDetector
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -38,7 +32,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.window.OnBackInvokedCallback
@@ -48,7 +41,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
-import kotlin.math.max
 
 /**
  * こえホーム: 音声で操作するホーム画面 (ランチャー)。
@@ -56,16 +48,11 @@ import kotlin.math.max
  */
 class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListener {
 
-    private class Photo(val uri: Uri, val millis: Long)
-
     private lateinit var message: TextView
     private lateinit var heard: TextView
     private lateinit var talk: Button
     private lateinit var confirmRow: View
     private lateinit var homePanel: View
-    private lateinit var photoPanel: View
-    private lateinit var photoView: ImageView
-    private lateinit var photoInfo: TextView
     private lateinit var listHeader: TextView
     private lateinit var contactList: LinearLayout
     private lateinit var webPanel: View
@@ -99,9 +86,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     private var contacts: List<Contact> = emptyList()
     private var choices: List<Contact> = emptyList()
     private var pendingContact: Contact? = null
-    private var photos: List<Photo> = emptyList()
-    private var photoIndex = 0
-    private var photoOpen = false
     private var webOpen = false
     private var lastGreeting = 0L
 
@@ -119,9 +103,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         talk = findViewById(R.id.talk)
         confirmRow = findViewById(R.id.confirmRow)
         homePanel = findViewById(R.id.homePanel)
-        photoPanel = findViewById(R.id.photoPanel)
-        photoView = findViewById(R.id.photo)
-        photoInfo = findViewById(R.id.photoInfo)
         listHeader = findViewById(R.id.listHeader)
         contactList = findViewById(R.id.contactList)
 
@@ -130,17 +111,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         clockArea = findViewById(R.id.clockArea)
         exitButton = findViewById(R.id.exit)
         setUpWebView()
-
-        // 写真は指で横になぞっても送れる (左へ = 次、右へ = 前)
-        val swipe = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent): Boolean = true
-            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (kotlin.math.abs(velocityX) < kotlin.math.abs(velocityY)) return false
-                run(if (velocityX < 0) Command.Next else Command.Prev)
-                return true
-            }
-        })
-        photoView.setOnTouchListener { _, e -> swipe.onTouchEvent(e) }
 
         talk.setOnClickListener { onTalkPressed() }
         findViewById<Button>(R.id.openPhotos).apply {
@@ -156,9 +126,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         findViewById<Button>(R.id.webClose).setOnClickListener { run(Command.Stop) }
         findViewById<Button>(R.id.yes).setOnClickListener { run(Command.Yes) }
         findViewById<Button>(R.id.no).setOnClickListener { run(Command.No) }
-        findViewById<Button>(R.id.photoNext).setOnClickListener { run(Command.Next) }
-        findViewById<Button>(R.id.photoPrev).setOnClickListener { run(Command.Prev) }
-        findViewById<Button>(R.id.photoClose).setOnClickListener { run(Command.Stop) }
         findViewById<Button>(R.id.exit).setOnClickListener { exitToUsualHome() }
         findViewById<View>(R.id.clockArea).setOnLongClickListener { showFamilyMenu(); true }
 
@@ -178,7 +145,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         webView.onResume()
         // しばらくぶりに画面を見たときだけ、使い方をひとこと案内する
         val now = SystemClock.elapsedRealtime()
-        if (stage == Stage.IDLE && !photoOpen && !webOpen && (lastGreeting == 0L || now - lastGreeting > GREETING_INTERVAL_MS)) {
+        if (stage == Stage.IDLE && !webOpen && (lastGreeting == 0L || now - lastGreeting > GREETING_INTERVAL_MS)) {
             lastGreeting = now
             say("ご用のときは、下の大きなボタンを押して、お話しください。")
         }
@@ -265,16 +232,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
 
     private fun granted(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
-    private val photoPermission: String
-        get() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES
-        else Manifest.permission.READ_EXTERNAL_STORAGE
-
     private fun requestMissingPermissions() {
         val need = listOf(
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.CALL_PHONE,
-            photoPermission,
         ).filterNot { granted(it) }
         if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), 1)
     }
@@ -416,7 +378,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             return
         }
         showSub("聞こえた言葉：「${texts[0]}」")
-        run(CommandParser.parse(texts, contacts, stage, choices, photoOpen, webOpen))
+        run(CommandParser.parse(texts, contacts, stage, choices, false, webOpen))
     }
 
     override fun onPartialResults(partialResults: Bundle?) {
@@ -515,8 +477,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                     say("最初の画面に、もどりました。")
                 }
             }
-            Command.Next -> movePhoto(+1)
-            Command.Prev -> movePhoto(-1)
+            // アプリ内の写真表示は廃止 (写真は Google フォトなどの写真アプリで開く)
+            Command.Next, Command.Prev -> run(Command.Unknown)
             Command.Time ->
                 say("いま、${SimpleDateFormat("ah時m分", Locale.JAPAN).format(Date())}です。")
             Command.Date ->
@@ -545,7 +507,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         pendingContact = null
         choices = emptyList()
         confirmRow.visibility = View.GONE
-        closePhotoPanel()
         closeWebPanel()
         showFavorites()
     }
@@ -639,7 +600,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     }
 
     private fun askConfirm(c: Contact) {
-        closePhotoPanel()
         stage = Stage.CONFIRM
         pendingContact = c
         choices = emptyList()
@@ -650,7 +610,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
 
     /** 候補が複数いるとき:「山田さんは3人見つかりました。…どなたに電話しますか？」 */
     private fun askChoose(candidates: List<Contact>, spoken: String) {
-        closePhotoPanel()
         closeWebPanel()
         val list = candidates.take(MAX_CHOICES)
         stage = Stage.CHOOSE
@@ -713,15 +672,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     // ---------------------------------------------------------------- 写真
 
     /**
-     * Google フォトのアプリを開く (ボタン・「写真見せて」の両方)。
-     * 入っていない端末では、こえホーム内の写真表示に切り替える。
+     * 写真アプリを開く (ボタン・「写真見せて」の両方)。
+     * Google フォトがあればそれを、なければ端末の標準の写真アプリを開く。
+     * こえホーム自身は写真を読まないので、写真の権限は要らない。
      */
     private fun openGooglePhotos() {
         val intent = packageManager.getLaunchIntentForPackage(GOOGLE_PHOTOS)
-        if (intent == null) {
-            openPhotos()
-            return
-        }
+            ?: Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_GALLERY)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         goHome()
         // 案内を読み上げながら、待たせずにすぐ Google フォトを開く
         say(PHOTOS_GUIDE)
@@ -732,101 +690,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             keepSpeakingOnPause = false
             say("写真を開けませんでした。")
         }
-    }
-
-    private fun openPhotos() {
-        if (!granted(photoPermission)) {
-            say("写真を見るための許可が必要です。")
-            requestMissingPermissions()
-            return
-        }
-        io.execute {
-            val list = ArrayList<Photo>()
-            try {
-                val base = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                contentResolver.query(
-                    base,
-                    arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_TAKEN, MediaStore.Images.Media.DATE_ADDED),
-                    null, null,
-                    "${MediaStore.Images.Media.DATE_ADDED} DESC",
-                )?.use { c ->
-                    while (c.moveToNext() && list.size < MAX_PHOTOS) {
-                        val taken = c.getLong(1)
-                        val millis = if (taken > 0) taken else c.getLong(2) * 1000
-                        list.add(Photo(ContentUris.withAppendedId(base, c.getLong(0)), millis))
-                    }
-                }
-            } catch (e: Exception) {
-                // 読めなければ「写真なし」として扱う
-            }
-            ui.post {
-                if (list.isEmpty()) {
-                    say("写真が見つかりませんでした。")
-                } else {
-                    goHome()
-                    photos = list
-                    photoIndex = 0
-                    photoOpen = true
-                    homePanel.visibility = View.GONE
-                    photoPanel.visibility = View.VISIBLE
-                    showPhoto()
-                    // Android 14 以降で「選択した写真のみ許可」にすると、選んだ数枚しか見えない
-                    if (Build.VERSION.SDK_INT >= 34 && list.size <= FEW_PHOTOS) {
-                        showSub("※ 写真が少ないときは：設定 → アプリ → こえホーム → 権限 → 写真と動画 →「常にすべて許可」", HINT_KEEP_MS)
-                    }
-                    val count = if (list.size >= MAX_PHOTOS) "" else "写真が${list.size}枚あります。"
-                    say(
-                        if (list.size == 1) "写真が1枚だけ見つかりました。"
-                        else "${count}いちばん新しい写真です。次の写真を見るときは、「次」と言うか、右下のボタンを押してください。"
-                    )
-                }
-            }
-        }
-    }
-
-    private fun movePhoto(delta: Int) {
-        if (!photoOpen) {
-            run(Command.Unknown)
-            return
-        }
-        val next = photoIndex + delta
-        when {
-            next < 0 -> say("これが、いちばん新しい写真です。")
-            next >= photos.size -> say("これが、最後の写真です。")
-            else -> {
-                photoIndex = next
-                showPhoto()
-                say(if (delta > 0) "次の写真です。" else "前の写真です。")
-            }
-        }
-    }
-
-    private fun showPhoto() {
-        val index = photoIndex
-        val p = photos[index]
-        photoInfo.text = "${index + 1} / ${photos.size}　　${SimpleDateFormat("yyyy年M月d日", Locale.JAPAN).format(Date(p.millis))}"
-        io.execute {
-            val bmp: Bitmap? = try {
-                ImageDecoder.decodeBitmap(ImageDecoder.createSource(contentResolver, p.uri)) { decoder, info, _ ->
-                    // 大きすぎる写真は縮小して読む (メモリ不足の防止)
-                    val longSide = max(info.size.width, info.size.height)
-                    decoder.setTargetSampleSize(max(1, longSide / 2000))
-                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                }
-            } catch (e: Exception) {
-                null
-            }
-            ui.post {
-                if (photoOpen && photoIndex == index) photoView.setImageBitmap(bmp)
-            }
-        }
-    }
-
-    private fun closePhotoPanel() {
-        photoOpen = false
-        photoPanel.visibility = View.GONE
-        homePanel.visibility = View.VISIBLE
-        photoView.setImageDrawable(null)
     }
 
     // ---------------------------------------------------------------- Google アシスタントへの引き継ぎ
@@ -1062,8 +925,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         const val LINE_APP = "jp.naver.line.android"
         const val PHOTOS_GUIDE = "写真を開きます。写真を検索する場合は、「オーケー、グーグル」と呼びかけてから、お話しください。"
         const val ICON_SCALE = 1.5f               // ボタンのアイコンの大きさ (文字の高さの何倍か)
-        const val MAX_PHOTOS = 300                // さかのぼって見られる写真の枚数
-        const val FEW_PHOTOS = 5                  // これ以下なら「許可が一部だけ」の疑いを案内する
         const val WEB_TEXT_ZOOM = 130             // 検索結果の文字の大きさ (%)
         const val LISTEN_WATCHDOG_MS = 20_000L
         const val HINT_KEEP_MS = 60_000L          // 設定の案内 (※) を出しておく時間
