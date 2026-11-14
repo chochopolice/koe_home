@@ -74,6 +74,7 @@ sealed class Command {
     object CallUnknown : Command()
     object Unknown : Command()
     object Greeting : Command()
+    object Line : Command()
     object ScrollDown : Command()
     object ScrollUp : Command()
     object Back : Command()
@@ -95,6 +96,7 @@ object CommandParser {
     private val YES = listOf("はい", "うん", "ええ", "そう", "おねがい", "お願い", "かけて", "おけ", "ok", "いいよ", "いいです", "よろしい", "だいじょうぶ", "大丈夫")
     private val STOP = listOf("やめ", "もどる", "戻る", "もどって", "戻って", "とじ", "閉じ", "おわり", "終わり", "おしまい", "ほむ", "きゃんせる", "最初")
     private val EXIT = listOf("終了", "しゅうりょう", "いつもの", "あぷりをとじ", "あぷりを閉じ")
+    private val LINE = listOf("らいん", "line")
     private val ASSIST = listOf("あしすたんと", "じぇみに", "おけぐぐる", "ねえぐぐる")
     // 「写真見せて」から取り除く決まり文句。これ以外の言葉が残れば「条件つきの写真探し」とみなす
     private val PHOTO_FILLER = Regex("(しゃしん|写真|ふぉと|あるばむ|画像|みせて|見せて|みたい|見たい|みせ|見せ|だして|出して|ひらいて|開いて|ひょうじ|表示|ください|下さい|ちょうだい|おねがいします|お願いします|おねがい|お願い|ちょっと|また|して|を|の|が|は|も|ね|よ|で|に|と|か|な|さ|あ|え|お)")
@@ -300,6 +302,8 @@ object CommandParser {
         }
 
         if (t.hasAny(ASSIST)) return Command.Assistant("")
+        // 「ラインを開いて」。「オンライン診療とは」のような長い文は検索に回す
+        if (t.length <= 10 && t.hasAny(LINE)) return Command.Line
         if (t.hasAny(SEARCH) && !t.hasAny(CLOSE)) return Command.Search(extractQuery(texts[0]))
         // 画面送りや中止の言葉は短いひとことのときだけ効かせる
         // (「上野動物園の営業時間は」「夏休みの終わりはいつ」を検索に回すため)

@@ -69,6 +69,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     private lateinit var webView: WebView
     private lateinit var clockArea: View
     private lateinit var exitButton: View
+    private lateinit var lineButton: Button
 
     private val ui = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
@@ -141,6 +142,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             text = iconLabel(R.drawable.ic_photo, "写真を見る", 28f)
             setOnClickListener { run(Command.Photos) }
         }
+        lineButton = findViewById(R.id.openLine)
+        lineButton.setOnClickListener { run(Command.Line) }
         findViewById<Button>(R.id.exit).text = iconLabel(R.drawable.ic_home, "✕ とじて、いつもの画面へ", 22f)
         findViewById<Button>(R.id.webDown).setOnClickListener { run(Command.ScrollDown) }
         findViewById<Button>(R.id.webUp).setOnClickListener { run(Command.ScrollUp) }
@@ -166,6 +169,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         showSub("")
         reloadContacts()
         WatchService.sync(this)   // 許可の画面から戻ってきたときにも反映する
+        refreshLineButton()
         webView.onResume()
         // しばらくぶりに画面を見たときだけ、使い方をひとこと案内する
         val now = SystemClock.elapsedRealtime()
@@ -455,6 +459,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                 say("いつもの画面に、もどります。") { exitToUsualHome() }
             }
             Command.Photos -> openGooglePhotos()
+            Command.Line -> openLine()
             is Command.Assistant -> handOffToAssistant(cmd.heard)
             is Command.Search -> if (cmd.query.isBlank()) askQuery() else openWeb(cmd.query)
             Command.ScrollDown -> if (webOpen) webView.pageDown(false) else run(Command.Unknown)
@@ -627,6 +632,38 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             } catch (e: Exception) {
                 say("電話をかけられませんでした。")
             }
+        }
+    }
+
+    // ---------------------------------------------------------------- LINE
+
+    /** LINE が入っている端末でだけボタンを出す。アイコンは端末に入っている LINE のものを使う。 */
+    private fun refreshLineButton() {
+        val installed = packageManager.getLaunchIntentForPackage(LINE_APP) != null
+        lineButton.visibility = if (installed) View.VISIBLE else View.GONE
+        if (!installed) return
+        val icon = try {
+            packageManager.getApplicationIcon(LINE_APP)
+        } catch (e: Exception) {
+            null
+        }
+        lineButton.text = if (icon != null) iconLabel(icon, "LINE を開く", 28f) else "LINE を開く"
+    }
+
+    private fun openLine() {
+        val intent = packageManager.getLaunchIntentForPackage(LINE_APP)
+        if (intent == null) {
+            say("ラインが、入っていません。")
+            return
+        }
+        goHome()
+        say("ラインを開きます。")
+        keepSpeakingOnPause = ttsReady
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            keepSpeakingOnPause = false
+            say("ラインを開けませんでした。")
         }
     }
 
@@ -935,6 +972,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
     /** 絵文字の代わりに、画像のアイコンを文字の先頭に置いたボタン用の文字列を作る。 */
     private fun iconLabel(resId: Int, label: String, textSp: Float): CharSequence {
         val icon = getDrawable(resId) ?: return label
+        return iconLabel(icon, label, textSp)
+    }
+
+    private fun iconLabel(icon: Drawable, label: String, textSp: Float): CharSequence {
         val size = (textSp * ICON_SCALE * resources.displayMetrics.scaledDensity).toInt()
         icon.setBounds(0, 0, size, size)
         return SpannableString("*  $label").apply {
@@ -975,6 +1016,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         const val MAX_FAVORITES = 5               // ホームに並べる連絡先ボタンの数
         const val MAX_CHOICES = 6                 // 同名候補を出す上限
         const val GOOGLE_PHOTOS = "com.google.android.apps.photos"
+        const val LINE_APP = "jp.naver.line.android"
         const val PHOTOS_GUIDE = "写真を開きます。写真を検索する場合は、「オーケー、グーグル」と呼びかけてから、お話しください。"
         const val ICON_SCALE = 1.5f               // ボタンのアイコンの大きさ (文字の高さの何倍か)
         const val MAX_PHOTOS = 300                // さかのぼって見られる写真の枚数
