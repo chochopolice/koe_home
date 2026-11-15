@@ -845,7 +845,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         val auto = if (Settings.canDrawOverlays(this)) "許可ずみ" else "未許可"
         val every = if (WatchService.isEnabled(this)) "オン" else "オフ"
         val care = if (CareNotifier.isEnabled(this)) "オン" else "オフ"
-        val items = arrayOf("アプリ一覧", "Androidの設定", "ホームアプリの切り替え", "連絡先を読み込み直す", "許可をもう一度確認する", "自動で開くための許可（いま: $auto）", "画面を点けるたびに開く（いま: $every）", "家族への通知・SMS（いま: $care）")
+        val items = arrayOf("アプリ一覧", "Androidの設定", "ホームアプリの切り替え", "連絡先を読み込み直す", "許可をもう一度確認する", "自動で開くための許可（いま: $auto）", "画面を点けるたびに開く（いま: $every）", "家族への通知・SMS（いま: $care）", "Googleアシスタントの設定")
         AlertDialog.Builder(this)
             .setTitle("家族向けメニュー")
             .setItems(items) { _, which ->
@@ -858,10 +858,107 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
                     5 -> openAutoStartSetting()
                     6 -> WatchService.setEnabled(this, !WatchService.isEnabled(this))
                     7 -> showCareSettings()
+                    8 -> showAssistantSettings()
                 }
             }
             .setNegativeButton("とじる", null)
             .show()
+    }
+
+    // ---------------------------------------------------------------- Google アシスタントの設定 (家族向け)
+
+    /**
+     * 「オーケーグーグル」で写真を探すなどの機能は、端末側のアシスタントの設定が済んでいないと動かない。
+     * 設定の場所は機種ごとに違って探しにくいので、家族向けメニューから直接たどれるようにする。
+     */
+    private fun showAssistantSettings() {
+        val now = currentAssistantLabel()
+        val choose = if (now != null) "既定のアシスタントを選ぶ（いま: $now）" else "既定のアシスタントを選ぶ"
+        val items = arrayOf(choose, "「OK Google」の声を登録する", "呼び出しを試す")
+        AlertDialog.Builder(this)
+            .setTitle("Googleアシスタントの設定")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> openDefaultAssistantSetting()
+                    1 -> showVoiceMatchGuide()
+                    2 -> testAssistant()
+                }
+            }
+            .setNegativeButton("もどる") { _, _ -> showFamilyMenu() }
+            .show()
+    }
+
+    /** いま既定になっているアシスタントのアプリ名。分からない端末では null。 */
+    private fun currentAssistantLabel(): String? {
+        val pkg = try {
+            // 新しい Android では読めないことがある (その場合は表示しないだけ)
+            Settings.Secure.getString(contentResolver, "assistant")?.substringBefore('/')
+        } catch (e: Exception) {
+            null
+        }
+        if (pkg.isNullOrBlank()) return null
+        return try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** 端末の「デジタルアシスタント アプリ」を選ぶ画面を開く。機種によって無い画面があるので順に試す。 */
+    private fun openDefaultAssistantSetting() {
+        val tries = listOf(
+            Intent(Settings.ACTION_VOICE_INPUT_SETTINGS),
+            Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS),
+            Intent(Settings.ACTION_SETTINGS),
+        )
+        for (intent in tries) {
+            try {
+                startActivity(intent)
+                return
+            } catch (e: Exception) {
+                // 次の画面へ
+            }
+        }
+        message.text = "開けませんでした。"
+    }
+
+    /**
+     * 「OK Google」の声の登録 (Voice Match) は、Google 側の設定画面を直接開く公式の方法が無い。
+     * 手順を見せてから、Gemini アプリ (無ければ Google アプリ) を開く。
+     */
+    private fun showVoiceMatchGuide() {
+        val gemini = packageManager.getLaunchIntentForPackage("com.google.android.apps.bard")
+        val google = packageManager.getLaunchIntentForPackage("com.google.android.googlequicksearchbox")
+        val target = gemini ?: google
+        val appName = if (gemini != null) "Gemini" else "Google"
+        val steps = if (target == null) {
+            "この端末には Google アプリが見つかりませんでした。Play ストアで「Google」を入れてから、もう一度お試しください。"
+        } else {
+            "このあと $appName アプリを開きます。\n\n" +
+                "1. 右上の丸いアイコン（アカウント）を押す\n" +
+                "2. 「設定」を開く\n" +
+                "3. 「OK Google」や「Voice Match」「ハンズフリー」と書かれた項目を開く\n" +
+                "4. 「OK Google」をオンにして、案内どおりに声を登録する\n\n" +
+                "※ 登録するのは、このスマホを使うご本人の声です。\n" +
+                "※ 項目の名前は機種やアプリの版で変わります。見つからないときは、前の画面の「呼び出しを試す」でアシスタントを開き、「アシスタントの設定を開いて」と話してください。"
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("「OK Google」の声を登録する")
+            .setMessage(steps)
+            .setNegativeButton("もどる") { _, _ -> showAssistantSettings() }
+        if (target != null) dialog.setPositiveButton("$appName を開く") { _, _ -> open(target) }
+        dialog.show()
+    }
+
+    /** 設定がうまくいったかを、その場で確かめる。 */
+    private fun testAssistant() {
+        val how = launchAssistant()
+        if (how != null) {
+            showSub("アシスタント呼び出し：$how")
+        } else {
+            message.text = "アシスタントを、呼び出せませんでした。"
+            showSub("※「既定のアシスタントを選ぶ」で Google または Gemini を選んでください", HINT_KEEP_MS)
+        }
     }
 
     /** 家族への通知 (SMS) の設定画面。 */
