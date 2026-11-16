@@ -845,20 +845,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         val auto = if (Settings.canDrawOverlays(this)) "許可ずみ" else "未許可"
         val every = if (WatchService.isEnabled(this)) "オン" else "オフ"
         val care = if (CareNotifier.isEnabled(this)) "オン" else "オフ"
-        val items = arrayOf("アプリ一覧", "Androidの設定", "ホームアプリの切り替え", "連絡先を読み込み直す", "許可をもう一度確認する", "自動で開くための許可（いま: $auto）", "画面を点けるたびに開く（いま: $every）", "家族への通知・SMS（いま: $care）", "Googleアシスタントの設定")
+        val items = arrayOf("Androidの設定", "ホームアプリの切り替え", "連絡先を読み込み直す", "許可をもう一度確認する", "自動で開くための許可（いま: $auto）", "画面を点けるたびに開く（いま: $every）", "家族への通知・SMS（いま: $care）", "Googleアシスタントの設定", "プライバシーポリシー")
         AlertDialog.Builder(this)
             .setTitle("家族向けメニュー")
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> showAppList()
-                    1 -> open(Intent(Settings.ACTION_SETTINGS))
-                    2 -> open(Intent(Settings.ACTION_HOME_SETTINGS))
-                    3 -> reloadContacts()
-                    4 -> requestMissingPermissions()
-                    5 -> openAutoStartSetting()
-                    6 -> WatchService.setEnabled(this, !WatchService.isEnabled(this))
-                    7 -> showCareSettings()
-                    8 -> showAssistantSettings()
+                    0 -> open(Intent(Settings.ACTION_SETTINGS))
+                    1 -> open(Intent(Settings.ACTION_HOME_SETTINGS))
+                    2 -> reloadContacts()
+                    3 -> requestMissingPermissions()
+                    4 -> openAutoStartSetting()
+                    5 -> WatchService.setEnabled(this, !WatchService.isEnabled(this))
+                    6 -> showCareSettings()
+                    7 -> showAssistantSettings()
+                    8 -> open(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
                 }
             }
             .setNegativeButton("とじる", null)
@@ -1036,22 +1036,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
             .show()
     }
 
-    private fun showAppList() {
-        val pm = packageManager
-        val apps = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
-            .map { it.loadLabel(pm).toString() to it.activityInfo.packageName }
-            .filter { it.second != packageName }
-            .distinctBy { it.second }
-            .sortedBy { it.first }
-        AlertDialog.Builder(this)
-            .setTitle("アプリ一覧")
-            .setItems(apps.map { it.first }.toTypedArray()) { _, which ->
-                pm.getLaunchIntentForPackage(apps[which].second)?.let { open(it) }
-            }
-            .setNegativeButton("とじる", null)
-            .show()
-    }
-
     private fun open(intent: Intent) {
         try {
             startActivity(intent)
@@ -1122,6 +1106,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener, RecognitionListene
         const val MAX_CHOICES = 6                 // 同名候補を出す上限
         const val GOOGLE_PHOTOS = "com.google.android.apps.photos"
         const val LINE_APP = "jp.naver.line.android"
+        const val PRIVACY_POLICY_URL = "https://koe-home.netlify.app/privacy.html"
         const val PHOTOS_GUIDE = "写真を開きます。写真を検索する場合は、「オーケー、グーグル」と呼びかけてから、お話しください。"
         const val ICON_SCALE = 1.5f               // ボタンのアイコンの大きさ (文字の高さの何倍か)
         const val WEB_TEXT_ZOOM = 130             // 検索結果の文字の大きさ (%)

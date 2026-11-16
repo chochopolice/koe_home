@@ -11,10 +11,10 @@ android {
 
     defaultConfig {
         applicationId = "app.koehome"
-        minSdk = 28          // Android 9 以上
+        minSdk = 29          // Android 10 以上
         targetSdk = 36      // Google Play の要件 (2026年8月31日以降は 36 以上)
-        versionCode = 20
-        versionName = "0.20"
+        versionCode = 21
+        versionName = "0.21"
     }
 
     // どこでビルドしても同じ署名になるよう、同梱のデバッグ用キーを使う。
